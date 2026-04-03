@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Tile MVM Simulator — Cadence Recalibrated v4</title>
+<title>Tile MVM Simulator — Cadence Recalibrated v5</title>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;500;600&family=IBM+Plex+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
 <style>
   :root {
@@ -450,7 +450,7 @@
       </div>
       <div>
         <div class="logo-text">TILE · SIM</div>
-        <div class="logo-sub">Tile MVM Analyzer · Cadence Recalibrated v4</div>
+        <div class="logo-sub">Tile MVM Analyzer · Cadence Recalibrated v5</div>
       </div>
     </div>
     <div class="header-status">
@@ -554,11 +554,11 @@
             </div>
             <div class="param-row">
               <label class="param-label">a — linear coeff <span>ps/cell — N≤D calibré Cadence</span></label>
-              <input type="number" id="p_cad_a" value="83.52" min="0" max="10000" step="0.1">
+              <input type="number" id="p_cad_a" value="92.30" min="0" max="10000" step="0.1">
             </div>
             <div class="param-row">
               <label class="param-label">b — quadratic coeff <span>ps/cell² — N≤D: 0.0419 | N&gt;D: 14661</span></label>
-              <input type="number" id="p_cad_b" value="0.0419" min="0" max="100000" step="0.0001">
+              <input type="number" id="p_cad_b" value="5.0" min="0" max="100000" step="0.0001">
             </div>
           </div>
 
@@ -793,7 +793,7 @@
           <span></span><span></span><span></span><span></span>
         </div>
         <div class="idle-text">Configure & Run</div>
-        <div class="idle-sub">Set parameters in the sidebar, then click Run Simulation — v4: calibration complète depuis breakdowns Cadence (MVM9/32/48/64). C_bl=15.2 fF/row, C_wl=19.3 fF/col, C_gate=124 fF, C_IDAC_OUT=470 fF. Power-law énergie: 0.6064·N^1.449. Latence: a=83.5 ps/cell, b=0.0419 ps/cell² (N≤D) | b=14661 ps/cell² (N>D oversized).</div>
+        <div class="idle-sub">Set parameters in the sidebar, then click Run Simulation — v5: recalibré avec données Cadence D=9..256. Latence: a=92.3 ps/cell, b=5.0 ps/cell², c=2.725ns. Énergie Régime1: α=0.210·N^1.736 pJ. Régime2: γ=1.528·D^0.801·t(N) pJ. DB: D∈{9,32,48,50,64,82,100,177,178,200,256}.</div>
       </div>
       <div id="resultsContent" style="display:none; display:flex; flex-direction:column; gap:20px;"></div>
     </div>
@@ -868,6 +868,34 @@ const CADENCE_DB = {
     100: {lat:11.64,E:585.5},
     110: {lat:13.93,E:706.4},
     200: {lat:27.12,E:1400.0}
+  },
+  // ── D=50 — NEW ──────────────────────────────────────────────────────────
+  50: {
+    1:   {lat:3.22,  E:3580.0},
+    25:  {lat:5.18,  E:242.3},
+    49:  {lat:7.41,  E:361.7},
+    50:  {lat:7.40,  E:180.8},
+    75:  {lat:13.13, E:330.9},
+    100: {lat:17.50, E:445.8}
+  },
+  // ── D=177 — NEW ─────────────────────────────────────────────────────────
+  177: {
+    177: {lat:19.32, E:1765.0}
+  },
+  // ── D=178 — NEW ─────────────────────────────────────────────────────────
+  178: {
+    89:  {lat:11.24, E:2000.0},
+    178: {lat:19.44, E:1786.0}
+  },
+  // ── D=200 — NEW ─────────────────────────────────────────────────────────
+  200: {
+    100: {lat:null,  E:2500.0},
+    200: {lat:21.66, E:2247.0}
+  },
+  // ── D=256 — NEW ─────────────────────────────────────────────────────────
+  256: {
+    128: {lat:15.73, E:4110.0},
+    256: {lat:27.89, E:3747.0}
   }
 };
 
@@ -1164,7 +1192,7 @@ function tileSettleNs(rowsAct, colsAct, cfg){
   const N_eff = Math.max(1, Math.max(rowsAct, colsAct));
   const a_ns = cfg.cadence_a_ps * 1e-3;    // ps/cell → ns/cell
   const b_ns = cfg.cadence_b_ps * 1e-6;    // ps/cell² → ns/cell²  (CORRECTION: était *1e-3*1e-3)
-  const base  = 2.9044;                     // ns — calibré Cadence (était 3.438)
+  const base  = 2.7253;                     // ns — recalibré avec D=50..256
   return Math.max(0.1, b_ns * N_eff * N_eff + a_ns * N_eff + base);
 }
 
@@ -1331,13 +1359,13 @@ function meshOverhead(M,K,N,cfg){
 // ═══════════════════════════════════════════════════════════════════════════
 
 // Regime 1: shifted power-law par tile (N < D)
-const CADENCE_ENERGY_COEFF  = 0.5961;  // alpha  [pJ]
-const CADENCE_ENERGY_EXP    = 1.4456;  // beta
+const CADENCE_ENERGY_COEFF  = 0.2097;  // alpha  [pJ] — recalibrated D=9..256
+const CADENCE_ENERGY_EXP    = 1.7359;  // beta — recalibrated D=9..256
 const CADENCE_ENERGY_NSHIFT = 0.8;     // delta — offset petit-N
 
 // Regime 2: puissance instantanee (N > D, oversized only)
-const CADENCE_PINST_GAMMA = 0.4136;   // gamma  [pJ/ns = mW]
-const CADENCE_PINST_DELTA = 1.0426;   // exposant (~lineaire en D)
+const CADENCE_PINST_GAMMA = 1.5283;  // recalibrated with D=50 oversized data   // gamma  [pJ/ns = mW]
+const CADENCE_PINST_DELTA = 0.8013;  // recalibrated   // exposant (~lineaire en D)
 
 // Latence quadratique (commune aux deux regimes)
 const CAD_LAT_B = 41.896e-6;  // b [ns/cell²]  calibre N=D: {9,32,48,64}
