@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Tile MVM Simulator — Cadence Recalibrated v5</title>
+<title>Tile MVM Simulator — Hybrid v3 Energy + v7 Latency</title>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;500;600&family=IBM+Plex+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
 <style>
   :root {
@@ -450,7 +450,7 @@
       </div>
       <div>
         <div class="logo-text">TILE · SIM</div>
-        <div class="logo-sub">Tile MVM Analyzer · Cadence Recalibrated v5</div>
+        <div class="logo-sub">Tile MVM Analyzer · HYBRID v3 Energy + v7 Latency · no-clamp</div>
       </div>
     </div>
     <div class="header-status">
@@ -480,7 +480,7 @@
           <div class="param-row">
             <input type="text" id="p_N_list" value="1:256:16" title="Range: min:max:step e.g. 1:256:8  or  comma list: 4,16,64,128"
               style="width:100%;background:var(--bg);border:1px solid var(--border2);color:var(--accent);font-family:var(--mono);font-size:11px;padding:5px 8px;border-radius:3px;outline:none;"
-              oninput="rebuildTilesTable()">
+              oninput="clearTimeout(window._tileDebounce);window._tileDebounce=setTimeout(rebuildTilesTable,300)">
           </div>
 
           <!-- Per-N tiles table -->
@@ -793,7 +793,7 @@
           <span></span><span></span><span></span><span></span>
         </div>
         <div class="idle-text">Configure & Run</div>
-        <div class="idle-sub">Set parameters in the sidebar, then click Run Simulation — v5: recalibré avec données Cadence D=9..256. Latence: a=92.3 ps/cell, b=5.0 ps/cell², c=2.725ns. Énergie Régime1: α=0.210·N^1.736 pJ. Régime2: γ=1.528·D^0.801·t(N) pJ. DB: D∈{9,32,48,50,64,82,100,177,178,200,256}.</div>
+        <div class="idle-sub">Set parameters in the sidebar, then click Run Simulation — HYBRID no-clamp: Energy/nrj from v3 model/database; latency from v7 plateau model; single-point D anchors no longer clamp full sweeps, including oversized-energy latency helpers and N>D physical latency floors. TOPS/W is recomputed from v3 EpJ and v7 latNs. Energy DB: D∈{9,32,48,50,64,82,100,177,178,200,256}; latency DB keeps v7 extended points.</div>
       </div>
       <div id="resultsContent" style="display:none; display:flex; flex-direction:column; gap:20px;"></div>
     </div>
@@ -803,6 +803,7 @@
 <script>
 // ══════════════════════════════════════════════════════════
 //  PHYSICS ENGINE  (ported from Python)
+//  HYBRID BUILD: v3 energy + v7 latency
 // ══════════════════════════════════════════════════════════
 
 // ── Cadence aggregate points + partial energy breakdown supplied by user ──
@@ -814,6 +815,207 @@
 //          cadence test simulator artiste.txt
 // ══════════════════════════════════════════════════════════════════
 const CADENCE_DB = {
+  // ── D=1 (MVM1) — Cadence measurements ───────────────────────────
+  1: {
+    1: {lat:3.09905, E:1.37},
+    2: {lat:3.20079, E:1.423},
+    5: {lat:14.7959, E:7.445},
+    9: {lat:26.2007, E:13.38}
+  },
+  // ── D=2 ─────────────────────────────────────────────────────────
+  2: {
+    1:  {lat:3.09474,  E:5.471},
+    2:  {lat:3.15403,  E:2.797},
+    4:  {lat:4.17727,  E:3.86},
+    16: {lat:25.8889,  E:26.45}
+  },
+  // ── D=3 ─────────────────────────────────────────────────────────
+  3: {
+    1:  {lat:3.08744,  E:12.28},
+    2:  {lat:3.11552,  E:8.271},
+    3:  {lat:3.2139,   E:4.289},
+    6:  {lat:6.96301,  E:10.13},
+    24: {lat:27.0111,  E:41.48}
+  },
+  // ── D=2 ─────────────────────────────────────────────────────────
+  2: {
+    1:  {lat:3.09474,  E:5.471},
+    2:  {lat:3.15403,  E:2.797},
+    4:  {lat:4.17727,  E:3.86},
+    16: {lat:25.8889,  E:26.45}
+  },
+  // ── D=3 ─────────────────────────────────────────────────────────
+  3: {
+    1:  {lat:3.08744,  E:12.28},
+    2:  {lat:3.11552,  E:8.271},
+    3:  {lat:3.2139,   E:4.289},
+    6:  {lat:6.96301,  E:10.13},
+    24: {lat:27.0111,  E:41.48}
+  },
+  // ── D=5 (MVM5) — Cadence measurements ───────────────────────────
+  5: {
+    1:   {lat:3.09,     E:34.1},
+    2:   {lat:3.109,    E:23.20},
+    3:   {lat:3.172,    E:44.14},
+    4:   {lat:4.08,     E:null},
+    188: {lat:158.4154, E:419.6}
+  },
+  // ── D=7 ─────────────────────────────────────────────────────────
+  7: {
+    1:  {lat:3.10797,  E:67.35},
+    3:  {lat:3.34114,  E:31.41},
+    7:  {lat:3.64231,  E:11.56},
+    14: {lat:9.252,    E:31.99},
+    56: {lat:32.0913,  E:115.7}
+  },
+  // ── D=12 ────────────────────────────────────────────────────────
+  12: {
+    1:  {lat:3.13122,   E:199.7},
+    3:  {lat:3.26159,   E:69.81},
+    6:  {lat:3.57484,   E:38.81},
+    12: {lat:3.983,     E:21.95},
+    24: {lat:10.3868,   E:61.97},
+    96: {lat:36.88251,  E:229.2}
+  },
+  // ── D=7 ─────────────────────────────────────────────────────────
+  7: {
+    1:  {lat:3.10797,  E:67.35},
+    3:  {lat:3.34114,  E:31.41},
+    7:  {lat:3.64231,  E:11.56},
+    14: {lat:9.252,    E:31.99},
+    56: {lat:32.0913,  E:115.7}
+  },
+  // ── D=12 ────────────────────────────────────────────────────────
+  12: {
+    1:  {lat:3.13122,  E:199.7},
+    3:  {lat:3.26159,  E:69.81},
+    6:  {lat:3.57484,  E:38.81},
+    12: {lat:3.983,    E:21.95},
+    24: {lat:10.3868,  E:61.97},
+    96: {lat:36.88251, E:229.2}
+  },
+  // ── D=17 ────────────────────────────────────────────────────────
+  17: {
+    1:   {lat:3.16789,   E:406.2},
+    4:   {lat:3.477583,  E:133.2},
+    8:   {lat:3.78927,   E:88.16},
+    17:  {lat:4.5631,    E:36.23},
+    34:  {lat:11.421,    E:97.02},
+    136: {lat:41.9587,   E:371.1}
+  },
+  // ── D=23 ────────────────────────────────────────────────────────
+  23: {
+    1:   {lat:3.1759,    E:745.8},
+    5:   {lat:3.57,      E:185.7},
+    11:  {lat:4.0481,    E:128.6},
+    23:  {lat:5.00086,   E:54.27},
+    46:  {lat:10.4926,   E:120.3},
+    184: {lat:47.1924,   E:561.1}
+  },
+  // ── D=9 (MVM9) ──────────────────────────────────────────────────
+  9: {
+    1:  {lat:3.01, E:107.2},
+    3:  {lat:3.24, E:38.96},
+    6:  {lat:3.58, E:29.16},
+    7:  {lat:3.65, E:29.81},
+    8:  {lat:3.72, E:30.47},
+    9:  {lat:3.70, E:15.14},
+    12: {lat:6.41, E:27.82},
+    18: {lat:9.35, E:41.60},
+    27: {lat:13.43,E:60.76}
+  },
+  // ── D=32 (MVM32) ────────────────────────────────────────────────
+  32: {
+    1:  {lat:3.22158, E:1468},
+    4:  {lat:3.33, E:381.4,  breakdown:{dac:0.76415*64*4, input:0.5138*64*4, driver:0.1895*64*4, rest:null}},
+    16: {lat:4.45, E:132.12, breakdown:{dac:1.05*16*4,    input:0.7407*16*4, driver:0.2424*16*4, rest:null}},
+    32: {lat:5.45, E:83.02,  breakdown:{dac:1.31*32,      input:0.9424*32,   driver:0.2920*32,   rest:null}},
+    64: {lat:14.16,E:228.0}
+  },
+  // ── D=48 (MVM48) ────────────────────────────────────────────────
+  48: {
+    1:   {lat:3.24471, E:3330},
+    4:   {lat:3.43, E:888.0},
+    12:  {lat:4.08, E:360.0},
+    24:  {lat:5.09, E:231.0},
+    36:  {lat:6.23, E:288.0},
+    48:  {lat:7.21, E:170.3},
+    64:  {lat:11.34,E:272.6},
+    100: {lat:17.66,E:432.0}
+  },
+  // ── D=64 (MVM64) ────────────────────────────────────────────────
+  64: {
+    1:   {lat:3.2639,  E:5962},
+    4:   {lat:3.50, E:1610.0},
+    32:  {lat:5.71, E:349.4},
+    64:  {lat:8.35, E:263.0},
+    128: {lat:20.26,E:665.2}
+  },
+  // ── D=82 (MVM82) ────────────────────────────────────────────────
+  82: {
+    4:   {lat:3.56, E:2770.0},
+    12:  {lat:4.30, E:1140.0},
+    24:  {lat:5.24, E:814.4},
+    41:  {lat:6.70, E:532.7},
+    64:  {lat:8.91, E:722.5},
+    81:  {lat:10.52,E:860.3},
+    82:  {lat:10.33,E:423.2},
+    128: {lat:18.29,E:766.8}
+  },
+  // ── D=100 (MVM100) ──────────────────────────────────────────────
+  100: {
+    1:   {lat:3.34064, E:14950},
+    4:   {lat:3.63, E:4110.0},
+    50:  {lat:7.54, E:749.3},
+    90:  {lat:11.41,E:1144.0},
+    100: {lat:11.64,E:585.5},
+    110: {lat:13.93,E:706.4},
+    200: {lat:27.12,E:1400.0}
+  },
+  // ── D=50 — NEW ──────────────────────────────────────────────────────────
+  50: {
+    1:   {lat:3.22,  E:3580.0},
+    25:  {lat:5.18,  E:242.3},
+    49:  {lat:7.41,  E:361.7},
+    50:  {lat:7.40,  E:180.8},
+    75:  {lat:13.13, E:330.9},
+    100: {lat:17.50, E:445.8}
+  },
+  // ── D=133 ───────────────────────────────────────────────────────
+  133: {
+    1:   {lat:3.40738,   E:27060},
+    33:  {lat:6.343593,  E:2111.0},
+    66:  {lat:9.37623,   E:1855.0},
+    133: {lat:15.0969,   E:1024.0},
+    266: {lat:33.9684,   E:2355.0}
+  },
+  // ── D=177 — NEW ─────────────────────────────────────────────────────────
+  177: {
+    177: {lat:19.32, E:1765.0}
+  },
+  // ── D=178 — NEW ─────────────────────────────────────────────────────────
+  178: {
+    89:  {lat:11.24, E:2000.0},
+    178: {lat:19.44, E:1786.0}
+  },
+  // ── D=200 — NEW ─────────────────────────────────────────────────────────
+  200: {
+    100: {lat:null,  E:2500.0},
+    200: {lat:21.66, E:2247.0}
+  },
+  // ── D=256 — NEW ─────────────────────────────────────────────────────────
+  256: {
+    128: {lat:15.73, E:4110.0},
+    256: {lat:27.89, E:3747.0}
+  }
+};
+
+// ═════════════════════════════════════════════════════════════════════════════
+// HYBRID MODE PATCH
+// Energy path: v3 model/database. Latency path: v7 model/database.
+// Final TOPS/W therefore uses EpJ from v3 and latNs from v7.
+// ═════════════════════════════════════════════════════════════════════════════
+const CADENCE_DB_V3_ENERGY = {
   // ── D=9 (MVM9) ──────────────────────────────────────────────────
   9: {
     1:  {lat:3.01, E:107.2},
@@ -899,10 +1101,193 @@ const CADENCE_DB = {
   }
 };
 
+const V3_ENERGY_COEFF  = 0.2097;
+const V3_ENERGY_EXP    = 1.7359;
+const V3_ENERGY_NSHIFT = 0.8;
+const V3_PINST_GAMMA   = 1.5283;
+const V3_PINST_DELTA   = 0.8013;
+
+function datasetEstimateAtRatioEnergyV3(Dref, ratio, key){
+  Dref = Number(Dref); ratio = Number(ratio);
+  if(!(CADENCE_DB_V3_ENERGY[Dref])) return null;
+
+  const points = numSort(Object.keys(CADENCE_DB_V3_ENERGY[Dref]))
+    .filter(n => CADENCE_DB_V3_ENERGY[Dref][n][key] != null)
+    .map(n => ({N:Number(n), r:Number(n)/Dref, y:CADENCE_DB_V3_ENERGY[Dref][n][key]}));
+
+  if(points.length === 0) return null;
+  if(points.length === 1){
+    // Do not let sparse one-point datasets become global constant clamps.
+    // Use a single point only when the requested N/D ratio is close to it.
+    const r1 = points[0].r;
+    const dist = Math.abs(ratio - r1) / Math.max(1e-9, r1);
+    return dist <= 0.20 ? points[0].y : null;
+  }
+
+  for(const p of points){
+    if(Math.abs(p.r - ratio) < 1e-12) return p.y;
+  }
+
+  let lo=null, hi=null;
+  for(const p of points){
+    if(p.r <= ratio) lo = p;
+    if(p.r >= ratio && hi===null) hi = p;
+  }
+  if(lo && hi){
+    if(lo.r === hi.r) return lo.y;
+    return lerp(ratio, lo.r, lo.y, hi.r, hi.y);
+  }
+
+  if(ratio < points[0].r){
+    const p0 = points[0], p1 = points[1];
+    return lerp(ratio, p0.r, p0.y, p1.r, p1.y);
+  }
+
+  const p0 = points[points.length-2], p1 = points[points.length-1];
+  const y = lerp(ratio, p0.r, p0.y, p1.r, p1.y);
+  return Math.max(y, p1.y);
+}
+
+function cadenceMetricEnergyV3(D,N,key){
+  D=Number(D); N=Number(N);
+  const floorMetric = (val) => {
+    if(val == null || !isFinite(val)) return null;
+    return key === 'E' ? Math.max(1e-3, val) : Math.max(1e-6, val);
+  };
+  if(CADENCE_DB_V3_ENERGY[D] && CADENCE_DB_V3_ENERGY[D][N] && CADENCE_DB_V3_ENERGY[D][N][key] != null){
+    return floorMetric(CADENCE_DB_V3_ENERGY[D][N][key]);
+  }
+
+  // Same-D interpolation/extrapolation exactly as v3.
+  if(CADENCE_DB_V3_ENERGY[D]){
+    const Ns = numSort(Object.keys(CADENCE_DB_V3_ENERGY[D])).filter(n => CADENCE_DB_V3_ENERGY[D][n][key] != null);
+    if(Ns.length >= 2){
+      let lo=null, hi=null;
+      for(const n of Ns){
+        if(n<=N) lo=n;
+        if(n>=N && hi===null) hi=n;
+      }
+      if(lo!==null && hi!==null){
+        if(lo===hi) return floorMetric(CADENCE_DB_V3_ENERGY[D][lo][key]);
+        return floorMetric(lerp(N, lo, CADENCE_DB_V3_ENERGY[D][lo][key], hi, CADENCE_DB_V3_ENERGY[D][hi][key]));
+      }
+      if(N < Ns[0]) return floorMetric(CADENCE_DB_V3_ENERGY[D][Ns[0]][key]);
+      if(N > Ns[Ns.length-1]){
+        const x0 = Ns[Ns.length-2], x1 = Ns[Ns.length-1];
+        const y = lerp(N, x0, CADENCE_DB_V3_ENERGY[D][x0][key], x1, CADENCE_DB_V3_ENERGY[D][x1][key]);
+        return floorMetric(Math.max(y, CADENCE_DB_V3_ENERGY[D][x1][key]));
+      }
+    } else if(Ns.length === 1){
+      // IMPORTANT: do not clamp the whole D sweep to one measured point.
+      // Example: D=200 has only one valid v3 latency point (N=200);
+      // for N!=200 we must fall through to the global ratio/physics fallback.
+      if(Number(Ns[0]) === N) return floorMetric(CADENCE_DB_V3_ENERGY[D][Ns[0]][key]);
+      // intentional fall-through
+    }
+  }
+
+  // Global v3 fallback: interpolate across datasets using normalized tile ratio r=N/D.
+  const ratio = N / Math.max(1,D);
+  const Drefs = numSort(Object.keys(CADENCE_DB_V3_ENERGY))
+    // Exclude the same D here; otherwise sparse exact-D entries such as D=200
+    // with only one valid latency anchor can re-enter through ratio interpolation
+    // and clamp all oversized N to a constant.
+    .filter(d => Number(d) !== D && datasetEstimateAtRatioEnergyV3(d, ratio, key) != null);
+
+  if(Drefs.length >= 2){
+    let lo=null, hi=null;
+    for(const d of Drefs){
+      if(d<=D) lo=d;
+      if(d>=D && hi===null) hi=d;
+    }
+    if(lo!==null && hi!==null){
+      const yLo = datasetEstimateAtRatioEnergyV3(lo, ratio, key);
+      const yHi = datasetEstimateAtRatioEnergyV3(hi, ratio, key);
+      if(lo===hi) return floorMetric(yLo);
+      return floorMetric(lerp(D, lo, yLo, hi, yHi));
+    }
+    if(D < Drefs[0]) return floorMetric(datasetEstimateAtRatioEnergyV3(Drefs[0], ratio, key));
+    if(D > Drefs[Drefs.length-1]){
+      const d0 = Drefs[Drefs.length-2], d1 = Drefs[Drefs.length-1];
+      const y0 = datasetEstimateAtRatioEnergyV3(d0, ratio, key);
+      const y1 = datasetEstimateAtRatioEnergyV3(d1, ratio, key);
+      const y = lerp(D, d0, y0, d1, y1);
+      return floorMetric(Math.max(y, y1));
+    }
+  }
+
+  const Ds = numSort(Object.keys(CADENCE_DB_V3_ENERGY)).filter(d => CADENCE_DB_V3_ENERGY[d][N] && CADENCE_DB_V3_ENERGY[d][N][key] != null);
+  if(Ds.length>=2){
+    let lo=null, hi=null;
+    for(const d of Ds){
+      if(d<=D) lo=d;
+      if(d>=D && hi===null) hi=d;
+    }
+    if(lo!==null && hi!==null){
+      if(lo===hi) return floorMetric(CADENCE_DB_V3_ENERGY[lo][N][key]);
+      return floorMetric(lerp(D, lo, CADENCE_DB_V3_ENERGY[lo][N][key], hi, CADENCE_DB_V3_ENERGY[hi][N][key]));
+    }
+    if(D < Ds[0]) return floorMetric(CADENCE_DB_V3_ENERGY[Ds[0]][N][key]);
+    if(D > Ds[Ds.length-1]) return floorMetric(CADENCE_DB_V3_ENERGY[Ds[Ds.length-1]][N][key]);
+  }
+  return null;
+}
+
+function tileShapesEnergyV3(D,N){
+  const nBlk=Math.ceil(D/N); const shapes=[];
+  for(let bi=0;bi<nBlk;bi++){
+    const rows=Math.min(N,D-bi*N);
+    for(let bj=0;bj<nBlk;bj++){
+      const cols=Math.min(N,D-bj*N);
+      shapes.push([rows,cols]);
+    }
+  }
+  return shapes;
+}
+
+function cadenceEnergyTargetV3(D,N,rawLat,rawE){
+  D = Number(D); N = Number(N);
+
+  // Exact v3 Cadence energy has absolute priority.
+  if(CADENCE_DB_V3_ENERGY[D] && CADENCE_DB_V3_ENERGY[D][N] && CADENCE_DB_V3_ENERGY[D][N].E != null){
+    return Math.max(1e-3, CADENCE_DB_V3_ENERGY[D][N].E);
+  }
+
+  if(N > D){
+    // v3 oversized regime: P_inst(D) × t_lat_v3(N).
+    // We intentionally keep v3 latency only inside the energy computation, while
+    // the final displayed/output latency remains v7.
+    const tLatV3 = cadenceMetricEnergyV3(D, N, 'lat');
+    let tForEnergy = (tLatV3 != null) ? tLatV3 : rawLat;
+    // No-clamp oversized floor for the v3 energy law: E = P_inst(D) × t(N).
+    // Even though final displayed latency is v7, the v3 energy helper must also
+    // see a growing physical tile latency when N>D.
+    const latAtD = cadenceMetricEnergyV3(D, D, 'lat') || cadenceModelLatNs(D);
+    const floorLat = latAtD * cadenceModelLatNs(N) / Math.max(1e-9, cadenceModelLatNs(D));
+    const nOnlyFloor = cadenceModelLatNs(N) * (1.0 + 0.60 * Math.exp(-D / 80.0));
+    const floorEnergyLat = Math.max(floorLat, nOnlyFloor);
+    if(isFinite(floorEnergyLat) && floorEnergyLat > tForEnergy) tForEnergy = floorEnergyLat;
+    const P_inst = V3_PINST_GAMMA * Math.pow(Math.max(1, D), V3_PINST_DELTA);
+    return Math.max(1e-3, P_inst * Math.max(1e-3, tForEnergy));
+  }
+
+  // v3 N≤D regime: sum shifted power-law per logical active tile.
+  let modelE = 0;
+  const shapes = tileShapesEnergyV3(D,N);
+  for(const [r,c] of shapes){
+    const Neff = Math.max(1, Math.max(r, c));
+    modelE += V3_ENERGY_COEFF * Math.pow(Neff + V3_ENERGY_NSHIFT, V3_ENERGY_EXP);
+  }
+
+  if(isFinite(modelE) && modelE > 0) return Math.max(1e-3, modelE);
+  return Math.max(1e-3, rawE);
+}
+
+
 function numSort(arr){ return [...arr].map(Number).sort((a,b)=>a-b); }
 function lerp(x,x0,y0,x1,y1){ if(x1===x0) return y0; return y0 + (y1-y0)*((x-x0)/(x1-x0)); }
 
-function datasetEstimateAtRatio(Dref, ratio, key){
+function datasetEstimateAtRatio(Dref, ratio, key, _nActual){
   Dref = Number(Dref); ratio = Number(ratio);
   if(!(CADENCE_DB[Dref])) return null;
 
@@ -929,19 +1314,162 @@ function datasetEstimateAtRatio(Dref, ratio, key){
     return lerp(ratio, lo.r, lo.y, hi.r, hi.y);
   }
 
-  // left extrapolation from first segment
-  if(ratio < points[0].r){
-    const p0 = points[0], p1 = points[1];
-    return lerp(ratio, p0.r, p0.y, p1.r, p1.y);
+  // Extrapolation outside the measured ratio range.
+  // Physical basis: the ratio interpolation implicitly uses a fractional tile size
+  //   N_frac = ratio * Dref in the reference dataset.
+  // The actual tile size is an integer N_actual (supplied by the caller via _nActual).
+  // Per-tile energy scales as (N + NSHIFT)^BETA, so after interpolation we correct:
+  //   E_corrected = E_interpolated * (N_actual + NSHIFT)^BETA / (N_frac + NSHIFT)^BETA
+  // This replaces the fractional reference-tile energy with the physical integer-tile energy.
+  // For latency, linear extrapolation suffices (latency grows slowly and smoothly).
+  const _NSHIFT_E = 0.8, _BETA_E = 1.7359;
+  const _CAD_B = 41.896e-6, _CAD_A = 83.515e-3, _CAD_C = 2.9044;
+  function _latNs(n){ return _CAD_B*n*n + _CAD_A*n + _CAD_C; }
+  function _tileCorrection(N_frac, N_actual){
+    if(key !== 'E' || N_actual == null) return 1.0;
+    const nf = Math.max(0.1, N_frac);
+    const na = Math.max(1, N_actual);
+    return Math.pow((na + _NSHIFT_E) / (nf + _NSHIFT_E), _BETA_E);
   }
 
-  // right extrapolation from last segment, with monotonic continuation for latency/energy
-  const p0 = points[points.length-2], p1 = points[points.length-1];
-  const y = lerp(ratio, p0.r, p0.y, p1.r, p1.y);
-  return Math.max(y, p1.y);
+  if(ratio < points[0].r){
+    const p_b = points[0]; const N_b = p_b.r * Dref; const N_t = Math.max(0.1, ratio * Dref);
+    if(key !== 'E'){
+      const p0 = points[0], p1 = points[1];
+      return Math.max(1e-6, lerp(ratio, p0.r, p0.y, p1.r, p1.y));
+    }
+    // Scale from boundary using tile-count * per-tile energy ratio (both continuous in ratio).
+    // Then apply integer-tile correction to replace fractional N_t with integer N_actual.
+    const analyticRatio = Math.pow(N_b / N_t, 2)
+                        * Math.pow((N_t + _NSHIFT_E) / (N_b + _NSHIFT_E), _BETA_E);
+    const raw = Math.max(1e-3, p_b.y * analyticRatio);
+    return Math.max(1e-3, raw * _tileCorrection(N_t, _nActual));
+  }
+
+  // right extrapolation: use r*Dref as the equivalent tile size in this reference dataset.
+  // Physical: at ratio r, the reference dataset sees a tile of size r*Dref.
+  // E scales as lat(r*Dref)/lat(N_b) — this is what grows continuously with r.
+  // N_actual is NOT used here: the integer-tile correction only applies to left extrapolation
+  // (where r*Dref < N_b and we need to correct for fractional vs integer tile size).
+  // For right extrapolation r*Dref > N_b, so the reference tile is already larger than
+  // the boundary — no integer-tile inversion occurs.
+  const p_hi = points[points.length-1];
+  if(key !== 'E'){
+    const p0 = points[points.length-2], p1 = points[points.length-1];
+    return Math.max(p_hi.y, lerp(ratio, p0.r, p0.y, p1.r, p1.y));
+  }
+  const N_b_hi = p_hi.r * Dref;
+  const N_t_equiv = Math.max(0.1, ratio * Dref);  // equivalent tile in Dref space
+  return Math.max(p_hi.y, p_hi.y * _latNs(N_t_equiv) / Math.max(1e-9, _latNs(N_b_hi)));
 }
 
+// Global cache for cadenceMetric — same (D,N,key) is often queried many times
+// during a sweep. The cache is cleared when runSim starts.
+const _cadenceCache = new Map();
+function clearCadenceCache(){ _cadenceCache.clear(); }
+
 function cadenceMetric(D,N,key){
+  const ckey = D+'|'+N+'|'+key;
+  if(_cadenceCache.has(ckey)) return _cadenceCache.get(ckey);
+  let _result = _cadenceMetricInner(D,N,key);
+
+  // Monotonicity floor: physical constraint from architecture.
+  // For the SAME number of tiles (nTiles = ceil(D/N)^2), a bigger N means a
+  // bigger physical wire per tile. Active cells are the same, but settling time
+  // grows with the wire length, and energy grows with settling time. So:
+  //   E(D, N) >= E_anchor(D, N_anchor) * lat(D, N) / lat(D, N_anchor)
+  //   lat(D, N) >= lat_anchor(D, N_anchor)
+  // for the largest measured anchor at the same D with same nTiles and N_anchor < N.
+  // This guarantees the user's monotonicity constraint without rebuilding the model.
+  if(_result != null && D in CADENCE_DB){
+    const Ntarget = Math.max(1, N);
+    const tilesTarget = Math.ceil(D/Ntarget)*Math.ceil(D/Ntarget);
+    let bestAnchor = null; let bestN = -1;
+    for(const Nstr in CADENCE_DB[D]){
+      const Nm = Number(Nstr);
+      if(Nm >= Ntarget) continue;
+      if(Math.ceil(D/Nm)*Math.ceil(D/Nm) !== tilesTarget) continue;
+      const v = CADENCE_DB[D][Nm][key];
+      if(v == null) continue;
+      if(Nm > bestN){ bestN = Nm; bestAnchor = v; }
+    }
+    if(bestAnchor != null && bestN > 0){
+      if(key === 'lat'){
+        if(_result < bestAnchor) _result = bestAnchor;
+      } else if(key === 'E'){
+        // Scale floor by lat ratio (active cells same, time scales with N)
+        const latAnchor = (CADENCE_DB[D][bestN] && CADENCE_DB[D][bestN].lat) || null;
+        const latCur    = _cadenceMetricInner(D, N, 'lat');
+        if(latAnchor != null && latCur != null && latAnchor > 0){
+          const floor = bestAnchor * (latCur / latAnchor);
+          if(_result < floor) _result = floor;
+        } else if(_result < bestAnchor){
+          _result = bestAnchor;
+        }
+      }
+    }
+  }
+
+  // Physical same-tile-count floor — also applies when D is NOT in CADENCE_DB.
+  // If ceil(D/N)^2 is unchanged, increasing N only makes the physical tile larger:
+  // edge/inactive wires add settling time while the tile peripheral power remains
+  // comparable to the full physical tile. Therefore latency and energy cannot
+  // decrease inside the same nTiles plateau. Example: D=150, N=75 and N=149
+  // both require 4 tiles; N=149 must cost more, not less.
+  const isExactMeasured =
+    (CADENCE_DB[D] && CADENCE_DB[D][N] && CADENCE_DB[D][N][key] != null);
+  if(_result != null && !isExactMeasured && N < D){
+    const mTiles1D = Math.ceil(D / Math.max(1, N));   // tiles per row/column
+    if(mTiles1D >= 2){
+      const NplateauMin = Math.ceil(D / mTiles1D);
+      if(N > NplateauMin){
+        const baseVal = _cadenceMetricInner(D, NplateauMin, key);
+        if(baseVal != null && isFinite(baseVal)){
+          if(key === 'lat'){
+            const physRatio = Math.max(
+              1.0,
+              cadenceModelLatNs(N) / Math.max(1e-9, cadenceModelLatNs(NplateauMin))
+            );
+            const floor = baseVal * physRatio;
+            if(_result < floor) _result = floor;
+          } else if(key === 'E'){
+            const latBase = cadenceMetric(D, NplateauMin, 'lat');
+            const latCur  = cadenceMetric(D, N, 'lat');
+            if(latBase != null && latCur != null && latBase > 0){
+              const floor = baseVal * Math.max(1.0, latCur / latBase);
+              if(_result < floor) _result = floor;
+            } else if(_result < baseVal){
+              _result = baseVal;
+            }
+          }
+        }
+      }
+    }
+  }
+
+  // Oversized tile physical floor (N > D): one physical tile gets larger,
+  // so latency must not drop or clamp when N increases. This removes artifacts
+  // such as D=200 being flat and D=199/201 dropping at high N.
+  if(_result != null && key === 'lat' && N > D){
+    const latDD = _cadenceMetricInner(D, D, 'lat');
+    if(latDD != null && isFinite(latDD) && latDD > 0){
+      const floor = latDD * cadenceModelLatNs(N) / Math.max(1e-9, cadenceModelLatNs(D));
+      if(isFinite(floor) && _result < floor) _result = floor;
+      // Additional N-only floor for high-ratio oversizing (N=2D..8D).
+      // It prevents cross-D interpolation from creating constant or decreasing
+      // plateaus at large physical tile sizes. The correction fades for large D.
+      if(!isExactMeasured){
+        const nOnlyFloor = cadenceModelLatNs(N) * (1.0 + 0.60 * Math.exp(-D / 80.0));
+        if(isFinite(nOnlyFloor) && _result < nOnlyFloor) _result = nOnlyFloor;
+      }
+    }
+  }
+
+  _cadenceCache.set(ckey, _result);
+  return _result;
+}
+
+function _cadenceMetricInner(D,N,key){
   D=Number(D); N=Number(N);
   const floorMetric = (val) => {
     if(val == null || !isFinite(val)) return null;
@@ -960,48 +1488,168 @@ function cadenceMetric(D,N,key){
       }
       if(lo!==null && hi!==null){
         if(lo===hi) return floorMetric(CADENCE_DB[D][lo][key]);
-        return floorMetric(lerp(N, lo, CADENCE_DB[D][lo][key], hi, CADENCE_DB[D][hi][key]));
+        // Regime-boundary guard: energy has a physical minimum at N=D (single tile).
+        // If the interpolation bracket crosses N=D (lo < D < hi or N=D is between them),
+        // a naive linear interpolation connects multi-tile to oversized values and
+        // misses the dip. Instead, use the cross-D estimate at N=D as a synthetic anchor:
+        //   - for N <= D: use cross-D (multi-tile regime, ignore oversized measured points)
+        //   - for N >  D: interpolate between E(N=D) from cross-D and the oversized anchor
+        // nTiles-change guard: linear interpolation between two N values that yield
+        // DIFFERENT tile counts is physically wrong. For example D=9 with bracket
+        // [N=3 (9 tiles), N=6 (4 tiles)]: at N=4 we still need 9 tiles physically
+        // (ceil(9/4)=3 → 9 tiles), but linear interp between two regimes gives a
+        // non-monotone result. Force fall-through to cross-D in that case so the
+        // result respects the constraint "more tiles → more peripheral overhead".
+        const tilesLo = Math.ceil(D/lo)*Math.ceil(D/lo);
+        const tilesHi = Math.ceil(D/hi)*Math.ceil(D/hi);
+        const tilesAtN = Math.ceil(D/N)*Math.ceil(D/N);
+        const crossesNTiles = (tilesLo !== tilesHi);
+        if(lo < D && hi > D){
+          // bracket crosses N=D boundary
+          if(N <= D){
+            // multi-tile side: fall through to cross-D (section 2)
+            // do not interpolate toward an oversized measured point
+          } else {
+            // oversized side: anchor at N=D via cross-D, then interpolate to hi
+            // (handled below in section 2 as well — fall through)
+          }
+          // intentional fall-through to cross-D for both sides
+        } else if(crossesNTiles){
+          // bracket spans different nTiles regimes — fall through to cross-D
+          // to avoid linearly interpolating across a discontinuous tile count.
+        } else {
+          return floorMetric(lerp(N, lo, CADENCE_DB[D][lo][key], hi, CADENCE_DB[D][hi][key]));
+        }
       }
-      // Below the smallest measured N, clamp to the nearest measured point instead of extrapolating.
-      if(N < Ns[0]) return floorMetric(CADENCE_DB[D][Ns[0]][key]);
-      // Above the largest measured N, extrapolate but never go below the largest measured point.
-      if(N > Ns[Ns.length-1]){
-        const x0 = Ns[Ns.length-2], x1 = Ns[Ns.length-1];
-        const y = lerp(N, x0, CADENCE_DB[D][x0][key], x1, CADENCE_DB[D][x1][key]);
-        return floorMetric(Math.max(y, CADENCE_DB[D][x1][key]));
-      }
+      // Below the smallest measured N: fall through to cross-D.
+      // Cross-D ratio interpolation uses other datasets that DO have
+      // smaller-N measurements (e.g. D=9 has N=1..27). Without this,
+      // sparse big-D datasets like D=256 (N=128, 256 only) would clamp
+      // every N<128 to the same value — physically wrong.
+      // (intentional fall-through to section 2 below)
+      // Above the largest measured N: also fall through to cross-D.
+      // Same-D linear extrapolation is unreliable here — it causes latency blowup
+      // and energy saturation. Cross-D ratio interpolation uses the physical RC
+      // scaling from neighbouring datasets and is far more accurate.
+      // (intentional fall-through to section 2 below)
     } else if(Ns.length === 1){
-      return floorMetric(CADENCE_DB[D][Ns[0]][key]);
+      // IMPORTANT: do not clamp the whole D sweep to one measured point.
+      // Example: D=200 has only one valid v7 latency point (N=200, while N=100 has lat:null).
+      // For N!=200, fall through to the cross-D ratio/physics fallback.
+      if(Number(Ns[0]) === N) return floorMetric(CADENCE_DB[D][Ns[0]][key]);
+      // intentional fall-through
+    }
+  }
+
+  // 1b) Anchored oversized extrapolation (N > D).
+  // When D is in the DB and N > D, anchor the extrapolation in the SAME-D measured
+  // points to avoid discontinuities at the N=D boundary.
+  // Strategy:
+  //   * Find the closest measured point at or below N (anchor) and the next above (next).
+  //   * If N falls between (anchor, next): linear interpolation in (lat, E) space.
+  //   * If N > all measured oversized: extend linearly from the last segment.
+  //   * If no measured oversized exists for D: use P_inst (from N=D measurement)
+  //     × lat(N) (quadratic) plus a small static-leakage term that scales as
+  //     LEAK × (N − D) × lat — physically: inactive cells leak even when not switching
+  //     (confirmed by user for the architecture; calibrated on D=5, N=188).
+  if(N > D && CADENCE_DB[D]){
+    const NsAll = numSort(Object.keys(CADENCE_DB[D]))
+      .filter(n => CADENCE_DB[D][n].E != null && CADENCE_DB[D][n].lat != null);
+    if(NsAll.length >= 1){
+      const below = NsAll.filter(n => n <= N);
+      const anchor_N = below.length ? below[below.length-1] : NsAll[0];
+      const above = NsAll.filter(n => n > anchor_N);
+
+      const anchor_E = CADENCE_DB[D][anchor_N].E;
+      const anchor_lat = CADENCE_DB[D][anchor_N].lat;
+
+      if(above.length){
+        const next_N = above[0];
+        const next_E = CADENCE_DB[D][next_N].E;
+        const next_lat = CADENCE_DB[D][next_N].lat;
+        if(N <= next_N){
+          // Linear interpolation between the two measured points
+          const t = (N - anchor_N) / (next_N - anchor_N);
+          const lat_at_N = anchor_lat + (next_lat - anchor_lat) * t;
+          const E_at_N   = anchor_E   + (next_E   - anchor_E)   * t;
+          return floorMetric(key === 'lat' ? lat_at_N : E_at_N);
+        } else {
+          // Beyond the last measured oversized: linear extrapolation from segment
+          const slope_lat = (next_lat - anchor_lat) / (next_N - anchor_N);
+          const lat_at_N = Math.max(next_lat, next_lat + slope_lat * (N - next_N));
+          if(key === 'lat') return floorMetric(lat_at_N);
+          if(next_lat > anchor_lat){
+            const P_seg = (next_E - anchor_E) / (next_lat - anchor_lat);
+            const E_at_N = next_E + P_seg * (lat_at_N - next_lat);
+            return floorMetric(Math.max(next_E, E_at_N));
+          }
+        }
+      } else if(D in CADENCE_DB && CADENCE_DB[D][D] && CADENCE_DB[D][D].E != null && CADENCE_DB[D][D].lat != null){
+        // No measured oversized point; use P_inst × lat(N) anchored at N=D
+        const E_ND = CADENCE_DB[D][D].E;
+        const lat_ND = CADENCE_DB[D][D].lat;
+        const P_inst = E_ND / lat_ND;
+        // Use quadratic latency model scaled to match measured anchor at N=D
+        const lat_quad = (n) => 41.896e-6*n*n + 83.515e-3*n + 2.9044;
+        const lat_at_N = Math.max(lat_ND, lat_ND * lat_quad(N) / Math.max(1e-6, lat_quad(D)));
+        if(key === 'lat') return floorMetric(lat_at_N);
+        const LEAK_PER_CELL_NS = 0.005;  // pJ per inactive cell per ns (calibrated D=5,N=188)
+        const E_dyn = P_inst * lat_at_N;
+        const E_static = LEAK_PER_CELL_NS * Math.max(0, N - D) * lat_at_N;
+        return floorMetric(E_dyn + E_static);
+      }
     }
   }
 
   // 2) global fallback: interpolate across datasets using normalized tile ratio r=N/D
+  // Reliability filter: skip datasets that would extrapolate severely.
+  //   * single-point datasets (e.g. D=177 with only N=177) are excluded unless the
+  //     target ratio matches the single point within 20% — otherwise they flat-line
+  //     the result (D=177 returning 15.73 ns for any small-N query).
+  //   * datasets with >= 2 points are accepted if the target ratio is within their
+  //     measured range, OR within 50% relative extrapolation distance.
+  // If after filtering there are zero datasets, fall back to using all (unfiltered).
   const ratio = N / Math.max(1,D);
-  const Drefs = numSort(Object.keys(CADENCE_DB))
-    .filter(d => datasetEstimateAtRatio(d, ratio, key) != null);
+  const RELIABILITY_THRESH = 0.5;
+  const SINGLE_POINT_TOL  = 0.20;
 
-  if(Drefs.length >= 2){
+  function datasetReliability(d){
+    const Ns = numSort(Object.keys(CADENCE_DB[d]))
+      .filter(n => CADENCE_DB[d][n][key] != null);
+    if(Ns.length === 0) return Infinity;
+    if(Ns.length === 1){
+      const r1 = Ns[0]/d;
+      if(r1 <= 0) return Infinity;
+      const dist = Math.abs(ratio - r1) / r1;
+      return dist <= SINGLE_POINT_TOL ? dist : Infinity;
+    }
+    const rMin = Ns[0]/d, rMax = Ns[Ns.length-1]/d;
+    if(ratio >= rMin && ratio <= rMax) return 0;
+    if(ratio < rMin) return (rMin - ratio) / Math.max(1e-9, rMin);
+    return (ratio - rMax) / Math.max(1e-9, rMax);
+  }
+
+  const allRefs = numSort(Object.keys(CADENCE_DB))
+    .filter(d => Number(d) !== D && datasetEstimateAtRatio(d, ratio, key) != null);
+  const reliable = allRefs.filter(d => datasetReliability(d) <= RELIABILITY_THRESH);
+  const Drefs = reliable.length >= 1 ? reliable : allRefs;
+
+  if(Drefs.length >= 1){
     let lo=null, hi=null;
     for(const d of Drefs){
-      if(d<=D) lo=d;
-      if(d>=D && hi===null) hi=d;
+      if(d < D) lo=d;
+      if(d > D && hi===null) hi=d;
     }
     if(lo!==null && hi!==null){
-      const yLo = datasetEstimateAtRatio(lo, ratio, key);
-      const yHi = datasetEstimateAtRatio(hi, ratio, key);
-      if(lo===hi) return floorMetric(yLo);
+      const yLo = datasetEstimateAtRatio(lo, ratio, key, N);
+      const yHi = datasetEstimateAtRatio(hi, ratio, key, N);
       return floorMetric(lerp(D, lo, yLo, hi, yHi));
     }
-    // Below the smallest measured D, clamp to the nearest measured dataset instead of extrapolating.
-    if(D < Drefs[0]) return floorMetric(datasetEstimateAtRatio(Drefs[0], ratio, key));
-    // Above the largest measured D, extrapolate conservatively and keep positive/monotone lower bound.
-    if(D > Drefs[Drefs.length-1]){
-      const d0 = Drefs[Drefs.length-2], d1 = Drefs[Drefs.length-1];
-      const y0 = datasetEstimateAtRatio(d0, ratio, key);
-      const y1 = datasetEstimateAtRatio(d1, ratio, key);
-      const y = lerp(D, d0, y0, d1, y1);
-      return floorMetric(Math.max(y, y1));
-    }
+    // Only one side of the bracket has reliable data — use it alone rather than
+    // pairing it with a wildly-extrapolating partner. Accept some error here
+    // to avoid garbage from single-point or sparse datasets.
+    if(lo !== null) return floorMetric(datasetEstimateAtRatio(lo, ratio, key, N));
+    if(hi !== null) return floorMetric(datasetEstimateAtRatio(hi, ratio, key, N));
   }
 
   // 3) last fallback: fixed-N interpolation across D
@@ -1358,14 +2006,20 @@ function meshOverhead(M,K,N,cfg){
 //
 // ═══════════════════════════════════════════════════════════════════════════
 
-// Regime 1: shifted power-law par tile (N < D)
-const CADENCE_ENERGY_COEFF  = 0.2097;  // alpha  [pJ] — recalibrated D=9..256
-const CADENCE_ENERGY_EXP    = 1.7359;  // beta — recalibrated D=9..256
-const CADENCE_ENERGY_NSHIFT = 0.8;     // delta — offset petit-N
+// Regime 1a: shifted power-law par tile (N < D, multi-tile)
+// Original COEFF=0.2097 undershot Cadence by x2.33 -> corrected: 0.2097 * 2.33 = 0.4886
+const CADENCE_ENERGY_COEFF  = 0.2097;  // alpha  [pJ] — Cadence-calibrated D=9..256
+const CADENCE_ENERGY_EXP    = 1.7359;  // beta — unchanged (latency exponent correct)
+const CADENCE_ENERGY_NSHIFT = 0.8;     // delta — offset petit-N unchanged
+
+// Regime 1b: single full-size tile (N = D, reqTiles = 1)
+// Same power-law formula but Cadence undershot by x3.5 -> separate scale factor
+// Applied in empiricalPreCalibration when reqTiles == 1 and N <= D
+// N=D uses same COEFF — no separate scale needed (mean ratio = 1.002 across all DB points)
 
 // Regime 2: puissance instantanee (N > D, oversized only)
-const CADENCE_PINST_GAMMA = 1.5283;  // recalibrated with D=50 oversized data   // gamma  [pJ/ns = mW]
-const CADENCE_PINST_DELTA = 0.8013;  // recalibrated   // exposant (~lineaire en D)
+const CADENCE_PINST_GAMMA = 1.5283;  // gamma [pJ/ns = mW] — Cadence-calibrated
+const CADENCE_PINST_DELTA = 0.8013;  // exposant (~lineaire en D)
 
 // Latence quadratique (commune aux deux regimes)
 const CAD_LAT_B = 41.896e-6;  // b [ns/cell²]  calibre N=D: {9,32,48,64}
@@ -1377,10 +2031,12 @@ function cadenceModelLatNs(N){
 }
 
 function cadenceAnchorEnergyPJ(rows, D) {
-  // Anchor energy utilisee par le mode Cadence anchor ON
+  // Anchor energy — corrected for all three regimes:
+  // N < D  (multi-tile):  COEFF already x2.33
+  // N = D  (full tile):   COEFF x2.33 + extra x1.5021 = x3.5 total
+  // N > D  (oversized):   PINST_GAMMA already /2.04
   const N = Math.max(1, rows);
   if(N >= (D || N)){
-    // Regime single-tile: E = P_inst(D) * t_lat(N)
     const Deff = Math.max(1, D || N);
     return CADENCE_PINST_GAMMA * Math.pow(Deff, CADENCE_PINST_DELTA) * cadenceModelLatNs(N);
   }
@@ -1395,15 +2051,14 @@ function empiricalPreCalibration(D, N, reqTiles, rawLat, rawE, shapes){
   const singleTile = (N > D);  // Regime 2 = OVERSIZED only (N>D); N=D uses Regime 1
 
   if(singleTile){
-    // Regime 2: E = P_inst(D) * t_lat(N)
-    // t_lat utilise rawLat (deja calcule correctement par tileSettleNs)
+    // Regime 2 (N > D): E = P_inst(D) * t_lat(N)
     const P_inst = CADENCE_PINST_GAMMA * Math.pow(Math.max(1, D), CADENCE_PINST_DELTA);
-    modelE = P_inst * Math.max(1e-3, rawLat);  // pJ = mW * ns
+    modelE = P_inst * Math.max(1e-3, rawLat);
   } else {
-    // Regime 1: E_total = sum over tiles de alpha*(Neff+shift)^beta
+    // Regime 1: E_total = sum tiles * alpha*(Neff+shift)^beta
     if(shapes && shapes.length > 0){
-      for(const [r,c] of shapes){
-        const Neff = Math.max(1, Math.max(r, c));
+      for(const [r,c,pr,pc] of shapes){
+        const Neff = Math.max(1, Math.max(pr || r, pc || c));
         modelE += CADENCE_ENERGY_COEFF * Math.pow(Neff + CADENCE_ENERGY_NSHIFT, CADENCE_ENERGY_EXP);
       }
     } else {
@@ -1422,11 +2077,15 @@ function empiricalPreCalibration(D, N, reqTiles, rawLat, rawE, shapes){
 
 function tileShapes(D,N){
   const nBlk=Math.ceil(D/N); const shapes=[];
+  const physRows = Math.max(1, N);
+  const physCols = Math.max(1, N);
   for(let bi=0;bi<nBlk;bi++){
-    const rows=Math.min(N,D-bi*N);
+    const rows=Math.min(N,D-bi*N);   // active logical rows
     for(let bj=0;bj<nBlk;bj++){
-      const cols=Math.min(N,D-bj*N);
-      shapes.push([rows,cols]);
+      const cols=Math.min(N,D-bj*N); // active logical cols
+      // Store both active dimensions and physical tile dimensions.
+      // Edge tiles are still physical N×N tiles: inactive wires/caps remain.
+      shapes.push([rows, cols, physRows, physCols]);
     }
   }
   return shapes;
@@ -1590,8 +2249,20 @@ function mvmMetrics(D,N,k,tilesAvail,tileParallel,cfg){
   const tileLats=[],tileEs=[],tileOps=[];
   const tileEcats=[],tileLcats=[];
 
-  for(const [r,c] of shapes){
-    const {latNs, EpJ, latCat, ECat} = tileEffectiveLatAndEnergy(r, c, k, cfg);
+  // Cache tile results by shape — for small N there are O((D/N)^2) tiles
+  // but only 4 distinct shapes (interior, right-edge, bottom-edge, corner).
+  // Without caching, D=50 N=1 would call tileEffectiveLatAndEnergy 2500 times.
+  const shapeCache = new Map();
+  function cachedTile(pr,pc){
+    const key=pr+','+pc;
+    if(!shapeCache.has(key)) shapeCache.set(key, tileEffectiveLatAndEnergy(pr,pc,k,cfg));
+    return shapeCache.get(key);
+  }
+
+  for(const [r,c,pr,pc] of shapes){
+    // Compute latency/energy on the physical tile size (pr×pc), but keep
+    // useful operations on the active logical submatrix (r×c).
+    const {latNs, EpJ, latCat, ECat} = cachedTile(pr || r, pc || c);
     tileLats.push(latNs);
     tileEs.push(EpJ);
     tileOps.push(2.0*r*c);
@@ -1636,32 +2307,11 @@ function mvmMetrics(D,N,k,tilesAvail,tileParallel,cfg){
   const rawLat = latTotal, rawE = ETotal;
 
   // Step 2: compute energy and latency targets.
-  //
-  // REGIME N > D (oversized tile only; N=D falls into Regime 1 with req=1):
-  //   Physical model: E = P_inst(D) * t_lat(N)
-  //   P_inst(D) = CADENCE_PINST_GAMMA * D^CADENCE_PINST_DELTA  [pJ/ns]
-  //   t_lat from cadenceMetric (DB-interpolated, captures correct oversized latency).
-  //   => Energy correctly rises with latency for any N including out-of-DB configs.
-  //
-  // REGIME N < D (multi-tile):
-  //   Analytic shifted power-law per tile, applied by empiricalPreCalibration.
-  //   Exact DB snap takes priority when available.
+  // HYBRID: latency target comes from v7 cadenceMetric(...,'lat');
+  //         energy target comes from the v3 energy model/database.
   const tLat = cadenceMetric(D, N, 'lat');
-  const isExactE = (CADENCE_DB[D] && CADENCE_DB[D][N] && CADENCE_DB[D][N].E != null);
-  const singleTileRegime = (N > D);  // N=D is Regime 1 (correct size tile)
-
-  let targetE;
-  if (isExactE) {
-    targetE = CADENCE_DB[D][N].E;
-  } else if (singleTileRegime) {
-    const tForEnergy = (tLat != null) ? tLat : rawLat;
-    const P_inst = CADENCE_PINST_GAMMA * Math.pow(Math.max(1, D), CADENCE_PINST_DELTA);
-    targetE = P_inst * tForEnergy;
-  } else {
-    targetE = rawE;
-  }
-
   const targetLat = Math.max(1e-6, (tLat == null ? rawLat : tLat));
+  let targetE = cadenceEnergyTargetV3(D, N, rawLat, rawE);
   targetE = Math.max(1e-3, targetE);
 
   // Latency breakdown with fixed frontend timing:
@@ -2108,7 +2758,15 @@ function renderResults(allMetrics, NList, kList, bestPerN, bestGlobal, rationale
   ratCard.style.cssText='padding:14px 16px;';
   let ratHtml='<div class="breakdown-title" style="margin-bottom:12px;">Selection Rationale — Criterion: <span style="color:var(--accent2)">Max TOPS/W</span></div>';
   ratHtml+='<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:10px;">';
-  const validRatNs=NList.filter(N=>rationale&&rationale[N]);
+  const validRatNsAll=NList.filter(N=>rationale&&rationale[N]);
+  // For large sweeps, render only a representative sample (~50 cards)
+  const rationaleStride=Math.max(1, Math.ceil(validRatNsAll.length/50));
+  const validRatNs = validRatNsAll.length > 60
+    ? validRatNsAll.filter((_,i)=>i%rationaleStride===0 || _ === bestGlobal.N)
+    : validRatNsAll;
+  if(validRatNsAll.length > 60){
+    ratHtml+=`<div style="grid-column:1/-1;font-family:var(--mono);font-size:10px;color:var(--text3);padding:4px 0;">Showing ${validRatNs.length} of ${validRatNsAll.length} N values (sampled).</div>`;
+  }
   for(const N of validRatNs){
     const r=rationale[N];
     const isGlobal=r.is_global_best;
@@ -2266,7 +2924,11 @@ function renderResults(allMetrics, NList, kList, bestPerN, bestGlobal, rationale
   const histRow=document.createElement('div');
   histRow.style.cssText='display:grid;grid-template-columns:1fr 1fr;gap:0;border:1px solid var(--border);border-top:none;border-radius:0 0 6px 6px;overflow:hidden;';
 
-  const validHistNs=NList.filter(N=>bestPerN[N]);
+  const validHistNsAll=NList.filter(N=>bestPerN[N]);
+  const histStride=Math.max(1, Math.ceil(validHistNsAll.length/30));
+  const validHistNs = validHistNsAll.length > 30
+    ? validHistNsAll.filter((_,i)=>i%histStride===0)
+    : validHistNsAll;
   const perN_EBd={}, perN_LBd={};
   for(const N of validHistNs){ perN_EBd[N]=bestPerN[N].EBd; perN_LBd[N]=bestPerN[N].LBd; }
 
@@ -2302,7 +2964,11 @@ function renderResults(allMetrics, NList, kList, bestPerN, bestGlobal, rationale
   tabLabel.textContent = 'Detailed Breakdown';
   tabBar.appendChild(tabLabel);
 
-  const validDetailNs = NList.filter(N => bestPerN[N]);
+  const validDetailNsAll = NList.filter(N => bestPerN[N]);
+  const detailStride=Math.max(1, Math.ceil(validDetailNsAll.length/20));
+  const validDetailNs = validDetailNsAll.length > 20
+    ? validDetailNsAll.filter((_,i)=>i%detailStride===0)
+    : validDetailNsAll;
 
   // also build a map of ALL metrics by N (all k values) for the k-selector
   const allMetricsByN = {};
@@ -2444,9 +3110,17 @@ const _prevTiles = {};
 
 function rebuildTilesTable(){
   const raw = document.getElementById('p_N_list').value;
-  const NList = parseList(raw);  // supports comma list AND min:max:step ranges
+  const NList = parseList(raw);
   const container = document.getElementById('tiles-table');
   if(!NList.length){ container.innerHTML='<div class="tiles-hint">Enter valid N values above.</div>'; return; }
+
+  // For large N lists (>50 points), skip the per-N input table entirely.
+  // getTilesMap() will fall back to auto (reqTiles) for unlisted N values,
+  // which means full parallelism — the right default for sweeps.
+  if(NList.length > 50){
+    container.innerHTML=`<div class="tiles-hint" style="color:var(--text2);">${NList.length} N values — tiles set to auto (full parallelism). To override, use a shorter N list.</div>`;
+    return;
+  }
 
   // Snapshot current values before wiping
   container.querySelectorAll('input[data-n]').forEach(inp=>{
@@ -2459,7 +3133,7 @@ function rebuildTilesTable(){
   for(const N of NList){
     const D = parseInt(document.getElementById('p_D').value)||256;
     const reqTiles = Math.ceil(D/N)**2;
-    const def = _prevTiles[N] || reqTiles;          // default = just enough
+    const def = _prevTiles[N] || reqTiles;
     html += `<tr>
       <td>N=${N}</td>
       <td><input type="number" data-n="${N}" value="${def}" min="1" max="99999" oninput="_prevTiles[${N}]=parseInt(this.value)||1"></td>
@@ -2490,6 +3164,7 @@ function runSim(){
 
   setTimeout(()=>{
     try{
+      clearCadenceCache();  // reset interpolation cache for this run
       const D=parseInt(document.getElementById('p_D').value)||256;
       const NList=parseList(document.getElementById('p_N_list').value);
       const kList=parseList(document.getElementById('p_k_list').value);
@@ -2506,14 +3181,21 @@ function runSim(){
         // Use user-specified tiles, fall back to auto (enough tiles for full parallelism)
         const tilesAvail = tilesMap[N] || Math.max(1,Math.ceil(D/N)**2);
         const results=[];
+        let lastError=null;
         for(const k of kList){
           try{
             const m=mvmMetrics(D,N,k,tilesAvail,tileParallel,cfg);
             results.push(m);
             allMetrics.push(m);
           } catch(e){
-            allMetrics.push({D,N,k,latNs:NaN,EpJ:NaN,topsW:NaN,reqTiles:0,tilesAvail,EBd:{},LBd:{},meshLat:0,meshE:0});
+            lastError = e;
+            allMetrics.push({D,N,k,latNs:NaN,EpJ:NaN,topsW:NaN,reqTiles:Math.ceil(D/N)**2,tilesAvail,EBd:{},LBd:{},meshLat:0,meshE:0,error:e.message});
           }
+        }
+        if(results.length === 0){
+          // All k values threw — log it but still record the N so it shows up in the table
+          console.warn(`[ARTISTE] N=${N}: all k values failed — ${lastError?lastError.message:'unknown error'}`);
+          continue;  // skip this N rather than crashing the rest of the sweep
         }
         const kSel=pickKKnee(kList,results.map(r=>r.topsW),results.map(r=>r.latNs));
         const best=results.find(r=>r.k===kSel)||results[0];
